@@ -29,6 +29,7 @@
 		"solidity-coverage": "0.7.15"
 	},
 	"dependencies": {
+		"@eth-optimism/smock": "^1.1.3",
 		"@openzeppelin/contracts": "2.5.1",
 		"hardhat-watcher": "^2.1.1"
 	}

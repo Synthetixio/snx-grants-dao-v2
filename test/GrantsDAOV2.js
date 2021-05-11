@@ -1,4 +1,5 @@
 const { expect } = require('chai');
+const { smockit } = require('@eth-optimism/smock');
 
 describe('GrantsDAOV2', function () {
 	let GrantsDAOV2;
@@ -14,6 +15,11 @@ describe('GrantsDAOV2', function () {
 	let paymentCurrency;
 	let proposer;
 
+	let milestoneOne;
+	let milestoneTwo;
+	let milestoneThree;
+	let milestoneFour;
+
 	let initiativeHash;
 
 	beforeEach(async () => {
@@ -21,7 +27,13 @@ describe('GrantsDAOV2', function () {
 		title = 'Rebuild the whole Synthetix Protocol';
 		description =
 			"This proposal is to rebuild the whole Synthetix Protocol under CZ's new paradigm - Binance Smart Chain";
-		milestones = [250, 250, 250, 250];
+
+		milestoneOne = 250;
+		milestoneTwo = 500;
+		milestoneThree = 100;
+		milestoneFour = 2000;
+
+		milestones = [milestoneOne, milestoneTwo, milestoneThree, milestoneFour];
 		paymentCurrency = '0xc011a73ee8576fb46f5e1c5751ca3b9fe0af2a6f';
 		proposer = 'Danijel';
 
@@ -92,7 +104,7 @@ describe('GrantsDAOV2', function () {
 		});
 	});
 
-	describe.only('when creating an initiative', () => {
+	describe('when creating an initiative', () => {
 		describe('when called by non-owner', () => {
 			it('should fail', async () => {
 				await expect(
@@ -128,9 +140,37 @@ describe('GrantsDAOV2', function () {
 		});
 	});
 
-	// describe('when managing initiatives', () => {});
+	describe.only('when managing grants', () => {
+		let grant;
 
-	// describe('when managing grants', () => {});
+		beforeEach(async () => {
+			await gDAOV2.createGrant(
+				grantHash,
+				title,
+				description,
+				milestones,
+				paymentCurrency,
+				proposer,
+				receivingAddress.address
+			);
+
+			grant = await gDAOV2.grants(grantHash);
+		});
+
+		it('should successfully release the first milestone', async () => {
+			await expect(gDAOV2.releaseMilestone(grantHash))
+				.to.emit(gDAOV2, 'MilestoneCompleted')
+				.withArgs(grantHash, amount);
+
+			expect(grant.currentMilestone).to.equal(1);
+		});
+
+		it('should successfully release the second milestone', async () => {});
+
+		// it('should successfully cancel a grant', async () => {});
+	});
+
+	// describe('when managing initiatives', () => {});
 
 	// describe('when managing funds', () => {});
 });

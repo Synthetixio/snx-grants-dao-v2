@@ -132,7 +132,6 @@ contract GrantsDAOV2 is Ownable, ERC165 {
      * @param _title The title of the initiative
      * @param _description The description of the initiative
      * @param _milestones An array specifying the number of milestones and the respective payment amounts
-     * @return The initiative id
      */
     function createInitiative(
         string memory _initiativeHash,
@@ -161,4 +160,24 @@ contract GrantsDAOV2 is Ownable, ERC165 {
 
         emit NewInitiative(_initiativeHash);
     }
+
+    /**
+     * @notice Called by the owners (gDAO multisig) to release a milestone payment on a grant
+     * Emits GrantMilestoneCompleted event.
+     * @param _hash The hash of the grant to release payment for
+     */
+    function progressGrant(string memory _hash) public onlyOwner() {
+        require(grants[_hash].state == GrantState.ACTIVE, "grant is not open");
+    }
+
+    /**
+     * @notice Called by the owners (gDAO multisig) to release a milestone payment on an initiative
+     * Emits InitiativeMilestoneCompleted event.
+     * @param _hash The hash of the grant to release payment for
+     */
+    function progressInitiative(string memory _hash) public onlyOwner() {
+        require(initiatives[_hash].state == InitiativeState.ASSIGNED, "initiative is not ready for payment");
+    }
+
+    function _progressMilestone() internal {}
 }
