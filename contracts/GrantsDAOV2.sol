@@ -79,6 +79,51 @@ contract GrantsDAOV2 is Ownable, ERC165 {
     event NewInitiative(string initiativeHash);
 
     /**
+     * @notice Event emitted when an initiative is assigned
+     */
+    event InitiativeAssigned(string initiativeHash, address assignee);
+
+    /**
+     * @notice Event emitted when an grant is re-assigned
+     */
+    event GrantReassigned(string grantHash, address assignee);
+
+    /**
+     * @notice Event emitted when a grant milestone is paid
+     */
+    event GrantMilestoneReleased(string grantHash, uint256 amount, address receiver, address paymentCurrency);
+
+    /**
+     * @notice Event emitted when an initiative milestone is paid
+     */
+    event InitiativeMilestoneReleased(string initiativeHash, uint256 amount, address receiver, address paymentCurrency);
+
+    /**
+     * @notice Event emitted when an grant is completed
+     */
+    event GrantCompleted(string grantHash);
+
+    /**
+     * @notice Event emitted when an initiative is completed
+     */
+    event InitiativeCompleted(string initiativeHash);
+
+    /**
+     * @notice Event emitted when an grant is cancelled
+     */
+    event GrantCancelled(string grantHash);
+
+    /**
+     * @notice Event emitted when an initiative is cancelled
+     */
+    event InitiativeCancelled(string initiativeHash);
+
+    /**
+     * @notice Event emitted when a withdrawal from the contract occurs
+     */
+    event Withdrawal(address receiver, uint256 amount, address token);
+
+    /**
      * @notice Contract is created by a deployer who then sets the grantsDAO multisig to be the owner
      */
     constructor() public {}
@@ -162,22 +207,227 @@ contract GrantsDAOV2 is Ownable, ERC165 {
     }
 
     /**
+     * @notice Called by the owners (gDAO multisig) to assign a initiative to a payable address
+     * Emits InitiativeAssigned event.
+     * @param _hash The hash of the initiative to modify
+     * @param _assignee An address to assign the initiative to
+     */
+    function assignInitiative(string memory _hash, address _assignee) public onlyOwner() {
+        Initiative storage initiative = initiatives[_hash];
+
+        initiative.state = InitiativeState.ASSIGNED;
+
+        initiative.receivingAddress = _assignee;
+
+        emit InitiativeAssigned(_hash, _assignee);
+    }
+
+    /**
+     * @notice Called by the owners (gDAO multisig) to assign a initiative to a payable address
+     * Emits InitiativeAssigned event.
+     * @param _hash The hash of the initiative to modify
+     * @param _assignee An address to assign the initiative to
+     */
+    function reassignGrant(string memory _hash, address _assignee) public onlyOwner() {
+        Grant storage grant = grants[_hash];
+
+        grant.receivingAddress = _assignee;
+
+        emit GrantReassigned(_hash, _assignee);
+    }
+
+    /**
      * @notice Called by the owners (gDAO multisig) to release a milestone payment on a grant
-     * Emits GrantMilestoneCompleted event.
+     * Emits GrantMilestoneReleased event or GrantCompleted
      * @param _hash The hash of the grant to release payment for
      */
     function progressGrant(string memory _hash) public onlyOwner() {
-        require(grants[_hash].state == GrantState.ACTIVE, "grant is not open");
+        Grant storage grant = grants[_hash];
+
+        require(grant.state == GrantState.ACTIVE, "grant is not active");
+
+        uint256 currentMilestone = grant.currentMilestone;
+
+        // If the current milestone is the last one, mark the grant as completed
+        if (currentMilestone == grant.milestones.length - 1) {
+            grant.state = GrantState.COMPLETED;
+            emit GrantCompleted(_hash);
+        } else {
+            grant.currentMilestone += 1;
+        }
+
+        grant.modifiedAt = now;
+
+        _transferMilestonePayment(grant.milestones[currentMilestone], grant.paymentCurrency, grant.receivingAddress);
+
+        emit GrantMilestoneReleased(
+            _hash,
+            grant.milestones[currentMilestone],
+            grant.receivingAddress,
+            grant.paymentCurrency
+        );
     }
 
     /**
      * @notice Called by the owners (gDAO multisig) to release a milestone payment on an initiative
-     * Emits InitiativeMilestoneCompleted event.
+     * Emits InitiativeMilestoneReleased event or InitiativeCompleted
      * @param _hash The hash of the grant to release payment for
      */
     function progressInitiative(string memory _hash) public onlyOwner() {
-        require(initiatives[_hash].state == InitiativeState.ASSIGNED, "initiative is not ready for payment");
+        Initiative storage initiative = initiatives[_hash];
+
+        require(initiative.state == InitiativeState.ASSIGNED, "initiative has not been assigned");
+
+        uint256 currentMilestone = initiative.currentMilestone;
+
+        // If the current milestone is the last one, mark the initiative as completed
+        if (currentMilestone == initiative.milestones.length - 1) {
+            initiative.state = InitiativeState.COMPLETED;
+            emit InitiativeCompleted(_hash);
+        } else {
+            initiative.currentMilestone += 1;
+        }
+
+        initiative.modifiedAt = now;
+
+        _transferMilestonePayment(
+            initiative.milestones[currentMilestone],
+            initiative.paymentCurrency,
+            initiative.receivingAddress
+        );
+
+        emit InitiativeMilestoneReleased(
+            _hash,
+            initiative.milestones[currentMilestone],
+            initiative.receivingAddress,
+            initiative.paymentCurrency
+        );
     }
 
-    function _progressMilestone() internal {}
+    /**
+     * @notice Called by the owners (gDAO multisig) to release all payments on an grant
+     * Emits GrantCompleted
+     * @param _hash The hash of the grant to release all payments
+     */
+    function completeGrant(string memory _hash) public onlyOwner() {
+        Grant storage grant = grants[_hash];
+
+        require(grant.state == GrantState.ACTIVE, "grant is not active");
+
+        uint256 currentMilestone = grant.currentMilestone;
+
+        uint256 total;
+
+        for (uint256 i = currentMilestone; i < grant.milestones.length; i++) {
+            total += grant.milestones[i];
+        }
+
+        grant.currentMilestone = grant.milestones.length - 1;
+
+        grant.state = GrantState.COMPLETED;
+
+        grant.modifiedAt = now;
+
+        _transferMilestonePayment(total, grant.paymentCurrency, grant.receivingAddress);
+
+        emit GrantCompleted(_hash);
+    }
+
+    /**
+     * @notice Called by the owners (gDAO multisig) to release a milestone payment on an initiative
+     * Emits InitiativeCompleted
+     * @param _hash The hash of the initiative to release all payments
+     */
+    function completeInitiative(string memory _hash) public onlyOwner() {
+        Initiative storage initiative = initiatives[_hash];
+
+        require(initiative.state == InitiativeState.ASSIGNED, "initiative has not been assigned");
+
+        uint256 currentMilestone = initiative.currentMilestone;
+
+        uint256 total;
+
+        for (uint256 i = currentMilestone; i < initiative.milestones.length; i++) {
+            total += initiative.milestones[i];
+        }
+
+        initiative.currentMilestone = initiative.milestones.length - 1;
+
+        initiative.state = InitiativeState.COMPLETED;
+
+        initiative.modifiedAt = now;
+
+        _transferMilestonePayment(total, initiative.paymentCurrency, initiative.receivingAddress);
+
+        emit InitiativeCompleted(_hash);
+    }
+
+    /**
+     * @notice Called by the owners (gDAO multisig) to cancel a grant
+     * Emits GrantCancelled
+     * @param _hash The hash of the grant to cancel
+     */
+    function cancelGrant(string memory _hash) public onlyOwner() {
+        Grant storage grant = grants[_hash];
+
+        grant.state = GrantState.CANCELLED;
+
+        grant.modifiedAt = now;
+
+        emit GrantCancelled(_hash);
+    }
+
+    /**
+     * @notice Called by the owners (gDAO multisig) to cancel a initiative
+     * Emits InitiativeCancelled
+     * @param _hash The hash of the initiative to cancel
+     */
+    function cancelInitiative(string memory _hash) public onlyOwner() {
+        Initiative storage initiative = initiatives[_hash];
+
+        initiative.state = InitiativeState.CANCELLED;
+
+        initiative.modifiedAt = now;
+
+        emit InitiativeCancelled(_hash);
+    }
+
+    /**
+     * @notice Called by the owners (gDAO multisig) to withdraw any ERC20 deposited in this account
+     * Emits Withdrawal
+     * @param _receiver The hash of the initiative to release all payments
+     * @param _amount The amount of specified erc20 to withdraw
+     * @param _token The hash of the initiative to release all payments
+     */
+    function withdraw(
+        address _receiver,
+        uint256 _amount,
+        address _token
+    ) public onlyOwner() {
+        IERC20 token = IERC20(_token);
+
+        require(token.balanceOf(address(this)) >= _amount, "insufficient balance in contract");
+
+        token.safeTransferFrom(address(this), _receiver, _amount);
+
+        emit Withdrawal(_receiver, _amount, _token);
+    }
+
+    /**
+     * @notice An internal function that handles the transfer of funds from the contract to the payable address
+     * @param _milestoneAmount The amount to transfer
+     * @param _paymentCurrency The ERC20 address of token to transfer
+     * @param _receiver The address of the receiver
+     */
+    function _transferMilestonePayment(
+        uint256 _milestoneAmount,
+        address _paymentCurrency,
+        address _receiver
+    ) internal {
+        IERC20 token = IERC20(_paymentCurrency);
+
+        require(token.balanceOf(address(this)) >= _milestoneAmount, "contract has insufficient balance");
+
+        token.safeTransferFrom(address(this), _receiver, _milestoneAmount);
+    }
 }
