@@ -22,7 +22,7 @@ module.exports = {
 	watcher: {
 		test: {
 			tasks: ['test'],
-			files: ['test/GrantsDAOV2.js', 'contracts/GrantsDAOV2.sol'],
+			files: ['test/GrantsDAOV2.js', 'contracts/GrantsDAOV2.sol', 'contracts/mocks/MockERC20.sol'],
 			verbose: true,
 		},
 	},

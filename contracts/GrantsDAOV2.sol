@@ -1,6 +1,7 @@
 //SPDX-License-Identifier: Unlicense
 pragma solidity ^0.5.16;
 
+// @TOOD: remove console log
 import "hardhat/console.sol";
 import "@openzeppelin/contracts/math/SafeMath.sol";
 import "@openzeppelin/contracts/token/ERC20/SafeERC20.sol";
@@ -148,22 +149,19 @@ contract GrantsDAOV2 is Ownable, ERC165 {
         string memory _proposer,
         address _receivingAddress
     ) public onlyOwner() {
-        Grant memory newGrant =
-            Grant(
-                _grantHash,
-                _title,
-                _description,
-                _milestones,
-                _paymentCurrency,
-                _proposer,
-                _receivingAddress,
-                0,
-                now,
-                now,
-                GrantState.ACTIVE
-            );
-
-        grants[_grantHash] = newGrant;
+        grants[_grantHash] = Grant(
+            _grantHash,
+            _title,
+            _description,
+            _milestones,
+            _paymentCurrency,
+            _proposer,
+            _receivingAddress,
+            0,
+            now,
+            now,
+            GrantState.ACTIVE
+        );
 
         grantsCount += 1;
 
@@ -428,6 +426,22 @@ contract GrantsDAOV2 is Ownable, ERC165 {
 
         require(token.balanceOf(address(this)) >= _milestoneAmount, "contract has insufficient balance");
 
-        token.safeTransferFrom(address(this), _receiver, _milestoneAmount);
+        token.safeTransfer(_receiver, _milestoneAmount);
+    }
+
+    /**
+     * @notice A view function for getting a grants milestones
+     * @param _hash The hash of the grant
+     */
+    function returnGrantMilestones(string memory _hash) public view returns (uint256[] memory) {
+        return grants[_hash].milestones;
+    }
+
+    /**
+     * @notice A view function for getting an initiatives milestones
+     * @param _hash The hash of the initiative
+     */
+    function returnInitiativeMilestones(string memory _hash) public view returns (uint256[] memory) {
+        return initiatives[_hash].milestones;
     }
 }
