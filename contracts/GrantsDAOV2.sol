@@ -406,7 +406,7 @@ contract GrantsDAOV2 is Ownable, ERC165 {
 
         require(token.balanceOf(address(this)) >= _amount, "insufficient balance in contract");
 
-        token.safeTransferFrom(address(this), _receiver, _amount);
+        token.safeTransfer(_receiver, _amount);
 
         emit Withdrawal(_receiver, _amount, _token);
     }

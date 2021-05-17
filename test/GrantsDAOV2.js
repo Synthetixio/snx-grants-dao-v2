@@ -207,12 +207,6 @@ describe('GrantsDAOV2', function () {
 			).to.revertedWith('caller is not the owner');
 		});
 
-		it('should successfully reassign grant', async () => {
-			await expect(
-				gDAOV2.connect(maliciousAddress).reassignGrant(grantHash, addrs[0].address)
-			).to.revertedWith('caller is not the owner');
-		});
-
 		it('should successfully reassigning to different address', async () => {
 			await expect(gDAOV2.reassignGrant(grantHash, addrs[0].address))
 				.to.emit(gDAOV2, 'GrantReassigned')
@@ -260,9 +254,275 @@ describe('GrantsDAOV2', function () {
 				.to.emit(gDAOV2, 'GrantCompleted')
 				.withArgs(grantHash);
 		});
+
+		it('should fail when non-owner attempts to complete a grant', async () => {
+			await expect(gDAOV2.connect(maliciousAddress).completeGrant(grantHash)).to.revertedWith(
+				'caller is not the owner'
+			);
+		});
+
+		it('should fail when attempting to complete a non-active grant', async () => {
+			await gDAOV2.cancelGrant(grantHash);
+			await expect(gDAOV2.completeGrant(grantHash)).to.revertedWith('grant is not active');
+		});
+
+		it('should successfully complete a initiative', async () => {
+			await expect(gDAOV2.completeGrant(grantHash))
+				.to.emit(gDAOV2, 'GrantCompleted')
+				.withArgs(grantHash);
+
+			expect(await mockERC20.balanceOf(receivingAddress.address)).to.equal(
+				milestoneOne + milestoneTwo + milestoneThree + milestoneFour
+			);
+		});
 	});
 
-	// describe('when managing initiatives', () => {});
+	describe('when managing initisatives', () => {
+		let initative;
 
-	// describe('when managing funds', () => {});
+		beforeEach(async () => {
+			await gDAOV2.createInitiative(
+				initiativeHash,
+				title,
+				description,
+				milestones,
+				paymentCurrency
+			);
+
+			initative = await gDAOV2.initiatives(initiativeHash);
+		});
+
+		it('should fail if non-owner attemps to assign receiver', async () => {
+			await expect(
+				gDAOV2.connect(maliciousAddress).assignInitiative(initiativeHash, receivingAddress.address)
+			).to.be.revertedWith('caller is not the owner');
+		});
+
+		it('should successfully assign receiver', async () => {
+			await expect(gDAOV2.assignInitiative(initiativeHash, receivingAddress.address))
+				.to.emit(gDAOV2, 'InitiativeAssigned')
+				.withArgs(initiativeHash, receivingAddress.address);
+		});
+
+		it('should fail if non-owner attempts to release payment', async () => {
+			await gDAOV2.assignInitiative(initiativeHash, receivingAddress.address);
+			await expect(
+				gDAOV2.connect(maliciousAddress).progressInitiative(initiativeHash)
+			).to.revertedWith('caller is not the owner');
+		});
+
+		it('should fail if attempt to release payment on non-assigned initiative', async () => {
+			await expect(gDAOV2.progressInitiative(initiativeHash)).to.revertedWith(
+				'initiative has not been assigned'
+			);
+		});
+
+		it('should successfully release the first milestone', async () => {
+			await gDAOV2.assignInitiative(initiativeHash, receivingAddress.address);
+
+			await expect(gDAOV2.progressInitiative(initiativeHash))
+				.to.emit(gDAOV2, 'InitiativeMilestoneReleased')
+				.withArgs(initiativeHash, milestoneOne, receivingAddress.address, mockERC20.address);
+
+			initiative = await gDAOV2.initiatives(initiativeHash);
+
+			expect(initiative.currentMilestone).to.equal(1);
+			expect(await mockERC20.balanceOf(gDAOV2.address)).to.equal(startingBalance - milestoneOne);
+			expect(await mockERC20.balanceOf(receivingAddress.address)).to.equal(milestoneOne);
+		});
+
+		it('should successfully release the second milestone', async () => {
+			await gDAOV2.assignInitiative(initiativeHash, receivingAddress.address);
+
+			await gDAOV2.progressInitiative(initiativeHash);
+			await gDAOV2.progressInitiative(initiativeHash);
+
+			initiative = await gDAOV2.initiatives(initiativeHash);
+
+			expect(initiative.currentMilestone).to.equal(2);
+
+			expect(await mockERC20.balanceOf(gDAOV2.address)).to.equal(
+				startingBalance - (milestoneOne + milestoneTwo)
+			);
+			expect(await mockERC20.balanceOf(receivingAddress.address)).to.equal(
+				milestoneOne + milestoneTwo
+			);
+		});
+
+		it('should fail when non-owner reassigns initiative', async () => {
+			await expect(
+				gDAOV2.connect(maliciousAddress).assignInitiative(initiativeHash, addrs[0].address)
+			).to.revertedWith('caller is not the owner');
+		});
+
+		it('should successfully reassign initiative', async () => {
+			await expect(gDAOV2.assignInitiative(initiativeHash, addrs[0].address))
+				.to.emit(gDAOV2, 'InitiativeAssigned')
+				.withArgs(initiativeHash, addrs[0].address);
+
+			initiative = await gDAOV2.initiatives(initiativeHash);
+
+			expect(initiative.receivingAddress).to.equal(addrs[0].address);
+		});
+
+		it('should successfully release payment after reassigning', async () => {
+			await gDAOV2.assignInitiative(initiativeHash, receivingAddress.address);
+			await gDAOV2.progressInitiative(initiativeHash);
+			await gDAOV2.assignInitiative(initiativeHash, addrs[0].address);
+
+			await gDAOV2.progressInitiative(initiativeHash);
+
+			expect(await mockERC20.balanceOf(receivingAddress.address)).to.equal(milestoneOne);
+			expect(await mockERC20.balanceOf(addrs[0].address)).to.equal(milestoneTwo);
+		});
+
+		it('should fail when non-owner cancels a grant', async () => {
+			await expect(
+				gDAOV2.connect(maliciousAddress).cancelInitiative(initiativeHash)
+			).to.revertedWith('caller is not the owner');
+		});
+
+		it('should successfully cancel a grant', async () => {
+			await expect(gDAOV2.cancelInitiative(initiativeHash))
+				.to.emit(gDAOV2, 'InitiativeCancelled')
+				.withArgs(initiativeHash);
+		});
+
+		it('should fail when attempting to release payment on cancelled grant', async () => {
+			await gDAOV2.cancelInitiative(initiativeHash);
+
+			await expect(gDAOV2.progressInitiative(initiativeHash)).to.revertedWith(
+				'initiative has not been assigned'
+			);
+		});
+
+		it('should successfully complete a grant', async () => {
+			await gDAOV2.assignInitiative(initiativeHash, receivingAddress.address);
+
+			for (let i = 0; i < milestones.length - 1; i++) {
+				await gDAOV2.progressInitiative(initiativeHash);
+			}
+
+			await expect(gDAOV2.progressInitiative(initiativeHash))
+				.to.emit(gDAOV2, 'InitiativeCompleted')
+				.withArgs(initiativeHash);
+		});
+
+		it('should fail when non-owner attempts to complete a initiative', async () => {
+			await gDAOV2.assignInitiative(initiativeHash, receivingAddress.address);
+
+			await expect(
+				gDAOV2.connect(maliciousAddress).completeInitiative(initiativeHash)
+			).to.revertedWith('caller is not the owner');
+		});
+
+		it('should fail when non-owner attempts to complete a non-assigned initiative', async () => {
+			await expect(gDAOV2.completeInitiative(initiativeHash)).to.revertedWith(
+				'initiative has not been assigned'
+			);
+		});
+
+		it('should successfully complete a initiative', async () => {
+			await gDAOV2.assignInitiative(initiativeHash, receivingAddress.address);
+			await expect(gDAOV2.completeInitiative(initiativeHash))
+				.to.emit(gDAOV2, 'InitiativeCompleted')
+				.withArgs(initiativeHash);
+
+			expect(await mockERC20.balanceOf(receivingAddress.address)).to.equal(
+				milestoneOne + milestoneTwo + milestoneThree + milestoneFour
+			);
+		});
+	});
+
+	describe('when managing funds', () => {
+		let mockEmptyToken;
+		let withdrawalAmount = 500;
+		beforeEach(async () => {
+			MockERC20 = await ethers.getContractFactory('MockERC20');
+
+			mockEmptyToken = await MockERC20.deploy(gDAOV2.address, 0);
+		});
+
+		it('should fail when the contract does not have enough to release payment', async () => {
+			await gDAOV2.createGrant(
+				grantHash,
+				title,
+				description,
+				milestones,
+				mockEmptyToken.address,
+				proposer,
+				receivingAddress.address
+			);
+
+			await expect(gDAOV2.progressGrant(grantHash)).to.revertedWith(
+				'contract has insufficient balance'
+			);
+		});
+
+		it('should fail when a non-owner attempts to withdraw erc20 funds', async () => {
+			await expect(
+				gDAOV2
+					.connect(maliciousAddress)
+					.withdraw(maliciousAddress.address, withdrawalAmount, mockERC20.address)
+			).to.revertedWith('caller is not the owner');
+		});
+
+		it('should fail when there is insufficient balance', async () => {
+			await expect(
+				gDAOV2.withdraw(receivingAddress.address, withdrawalAmount, mockEmptyToken.address)
+			).to.revertedWith('insufficient balance in contract');
+		});
+
+		it('should successfully allow owner to withdraw erc20 funds', async () => {
+			await expect(gDAOV2.withdraw(owner.address, withdrawalAmount, mockERC20.address))
+				.to.emit(gDAOV2, 'Withdrawal')
+				.withArgs(owner.address, withdrawalAmount, mockERC20.address);
+
+			expect(await mockERC20.balanceOf(owner.address)).to.equal(withdrawalAmount);
+		});
+	});
+
+	describe('when accessing view functions', () => {
+		beforeEach(async () => {
+			await gDAOV2.createGrant(
+				grantHash,
+				title,
+				description,
+				milestones,
+				paymentCurrency,
+				proposer,
+				receivingAddress.address
+			);
+
+			await gDAOV2.createInitiative(
+				initiativeHash,
+				title,
+				description,
+				milestones,
+				paymentCurrency
+			);
+		});
+
+		it('should return the correct milestones for a grant', async () => {
+			let grantMilestonesBN = await gDAOV2.returnGrantMilestones(grantHash);
+
+			let grantMilestones = grantMilestonesBN.map((e) => e.toNumber());
+
+			expect(grantMilestones).contains(milestoneOne);
+			expect(grantMilestones).contains(milestoneTwo);
+			expect(grantMilestones).contains(milestoneThree);
+			expect(grantMilestones).contains(milestoneFour);
+		});
+
+		it('should return the correct milestones for a initative', async () => {
+			let initiativeMilestonesBN = await gDAOV2.returnInitiativeMilestones(initiativeHash);
+
+			let initiativeMilestones = initiativeMilestonesBN.map((e) => e.toNumber());
+
+			expect(initiativeMilestones).contains(milestoneOne);
+			expect(initiativeMilestones).contains(milestoneTwo);
+			expect(initiativeMilestones).contains(milestoneThree);
+			expect(initiativeMilestones).contains(milestoneFour);
+		});
+	});
 });
