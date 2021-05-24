@@ -18,18 +18,27 @@ describe('GrantsDAOV2', function () {
 	let paymentCurrency;
 	let proposer;
 
+	let cancellationReason;
+
 	let milestoneOne;
 	let milestoneTwo;
 	let milestoneThree;
 	let milestoneFour;
 
 	let initiativeHash;
+	let competitionHash;
+	let totalBounty;
+	let placeAmounts;
+	let hugeTotalBounty;
+	let hugePlaceAmounts;
 
 	beforeEach(async () => {
 		grantHash = 'QWERTY';
 		title = 'Rebuild the whole Synthetix Protocol';
 		description =
 			"This proposal is to rebuild the whole Synthetix Protocol under CZ's new paradigm - Binance Smart Chain";
+
+		cancellationReason = 'gDAO disagreement';
 
 		milestoneOne = 250;
 		milestoneTwo = 500;
@@ -52,6 +61,12 @@ describe('GrantsDAOV2', function () {
 		paymentCurrency = mockERC20.address;
 
 		initiativeHash = 'UIOP';
+
+		competitionHash = 'GHJK';
+		totalBounty = 1000;
+		placeAmounts = [400, 300, 150, 150];
+		hugeTotalBounty = 650000;
+		hugePlaceAmounts = [300000, 200000, 100000, 50000];
 	});
 
 	describe('when creating grants', () => {
@@ -74,6 +89,30 @@ describe('GrantsDAOV2', function () {
 		});
 
 		describe('when called by owner', () => {
+			it('should fail if grant hash already exists', async () => {
+				await gDAOV2.createGrant(
+					grantHash,
+					title,
+					description,
+					milestones,
+					paymentCurrency,
+					proposer,
+					receivingAddress.address
+				);
+
+				await expect(
+					gDAOV2.createGrant(
+						grantHash,
+						title,
+						description,
+						milestones,
+						paymentCurrency,
+						proposer,
+						receivingAddress.address
+					)
+				).to.be.revertedWith('duplicate grants hash');
+			});
+
 			it('should successfully emit an event', async () => {
 				await expect(
 					gDAOV2
@@ -126,6 +165,20 @@ describe('GrantsDAOV2', function () {
 		});
 
 		describe('when called by owner', () => {
+			it('should fail if intitiative hash already exists', async () => {
+				await gDAOV2.createInitiative(
+					initiativeHash,
+					title,
+					description,
+					milestones,
+					paymentCurrency
+				);
+
+				await expect(
+					gDAOV2.createInitiative(initiativeHash, title, description, milestones, paymentCurrency)
+				).to.be.revertedWith('duplicate initiatives hash');
+			});
+
 			it('should successfully emit an event', async () => {
 				await expect(
 					gDAOV2
@@ -141,11 +194,90 @@ describe('GrantsDAOV2', function () {
 					.connect(owner)
 					.createInitiative(initiativeHash, title, description, milestones, paymentCurrency);
 
-				const initative = await gDAOV2.initiatives(initiativeHash);
+				const initiative = await gDAOV2.initiatives(initiativeHash);
 				const initiativesCount = await gDAOV2.initiativesCount();
 
-				expect(initative.initiativeHash).to.equal(initiativeHash);
+				expect(initiative.initiativeHash).to.equal(initiativeHash);
 				expect(initiativesCount).to.equal(1);
+			});
+		});
+	});
+
+	describe('when creating a competition', () => {
+		describe('when called by non-owner', () => {
+			it('should fail', async () => {
+				await expect(
+					gDAOV2
+						.connect(maliciousAddress)
+						.createCompetition(
+							competitionHash,
+							title,
+							description,
+							paymentCurrency,
+							totalBounty,
+							placeAmounts
+						)
+				).to.be.revertedWith('caller is not the owner');
+			});
+		});
+
+		describe('when called by owner', () => {
+			it('should fail if competition hash already exists', async () => {
+				await gDAOV2.createCompetition(
+					competitionHash,
+					title,
+					description,
+					paymentCurrency,
+					totalBounty,
+					placeAmounts
+				);
+
+				await expect(
+					gDAOV2.createCompetition(
+						competitionHash,
+						title,
+						description,
+						paymentCurrency,
+						totalBounty,
+						placeAmounts
+					)
+				).to.be.revertedWith('duplicate competition hash');
+			});
+
+			it('should successfully emit an event', async () => {
+				await expect(
+					gDAOV2
+						.connect(owner)
+						.createCompetition(
+							competitionHash,
+							title,
+							description,
+							paymentCurrency,
+							totalBounty,
+							placeAmounts
+						)
+				)
+					.to.emit(gDAOV2, 'NewCompetition')
+					.withArgs(competitionHash);
+			});
+
+			it('should successfully create a competition in state', async () => {
+				await gDAOV2
+					.connect(owner)
+					.createCompetition(
+						competitionHash,
+						title,
+						description,
+						paymentCurrency,
+						totalBounty,
+						placeAmounts
+					);
+
+				const competition = await gDAOV2.competitions(competitionHash);
+				const competitionCount = await gDAOV2.competitionCount();
+
+				expect(competition.competitionHash).to.equal(competitionHash);
+				expect(competitionCount).to.equal(1);
 			});
 		});
 	});
@@ -228,19 +360,19 @@ describe('GrantsDAOV2', function () {
 		});
 
 		it('should fail when non-owner cancels a grant', async () => {
-			await expect(gDAOV2.connect(maliciousAddress).cancelGrant(grantHash)).to.revertedWith(
-				'caller is not the owner'
-			);
+			await expect(
+				gDAOV2.connect(maliciousAddress).cancelGrant(grantHash, cancellationReason)
+			).to.revertedWith('caller is not the owner');
 		});
 
 		it('should successfully cancel a grant', async () => {
-			await expect(gDAOV2.cancelGrant(grantHash))
+			await expect(gDAOV2.cancelGrant(grantHash, cancellationReason))
 				.to.emit(gDAOV2, 'GrantCancelled')
-				.withArgs(grantHash);
+				.withArgs(grantHash, cancellationReason);
 		});
 
 		it('should fail when attempting to release payment on cancelled grant', async () => {
-			await gDAOV2.cancelGrant(grantHash);
+			await gDAOV2.cancelGrant(grantHash, cancellationReason);
 
 			await expect(gDAOV2.progressGrant(grantHash)).to.revertedWith('grant is not active');
 		});
@@ -262,7 +394,7 @@ describe('GrantsDAOV2', function () {
 		});
 
 		it('should fail when attempting to complete a non-active grant', async () => {
-			await gDAOV2.cancelGrant(grantHash);
+			await gDAOV2.cancelGrant(grantHash, cancellationReason);
 			await expect(gDAOV2.completeGrant(grantHash)).to.revertedWith('grant is not active');
 		});
 
@@ -277,8 +409,8 @@ describe('GrantsDAOV2', function () {
 		});
 	});
 
-	describe('when managing initisatives', () => {
-		let initative;
+	describe('when managing initiatives', () => {
+		let initiative;
 
 		beforeEach(async () => {
 			await gDAOV2.createInitiative(
@@ -289,7 +421,7 @@ describe('GrantsDAOV2', function () {
 				paymentCurrency
 			);
 
-			initative = await gDAOV2.initiatives(initiativeHash);
+			initiative = await gDAOV2.initiatives(initiativeHash);
 		});
 
 		it('should fail if non-owner attemps to assign receiver', async () => {
@@ -376,27 +508,27 @@ describe('GrantsDAOV2', function () {
 			expect(await mockERC20.balanceOf(addrs[0].address)).to.equal(milestoneTwo);
 		});
 
-		it('should fail when non-owner cancels a grant', async () => {
+		it('should fail when non-owner cancels a initiative', async () => {
 			await expect(
-				gDAOV2.connect(maliciousAddress).cancelInitiative(initiativeHash)
+				gDAOV2.connect(maliciousAddress).cancelInitiative(initiativeHash, cancellationReason)
 			).to.revertedWith('caller is not the owner');
 		});
 
-		it('should successfully cancel a grant', async () => {
-			await expect(gDAOV2.cancelInitiative(initiativeHash))
+		it('should successfully cancel a initiative', async () => {
+			await expect(gDAOV2.cancelInitiative(initiativeHash, cancellationReason))
 				.to.emit(gDAOV2, 'InitiativeCancelled')
-				.withArgs(initiativeHash);
+				.withArgs(initiativeHash, cancellationReason);
 		});
 
-		it('should fail when attempting to release payment on cancelled grant', async () => {
-			await gDAOV2.cancelInitiative(initiativeHash);
+		it('should fail when attempting to release payment on cancelled initiative', async () => {
+			await gDAOV2.cancelInitiative(initiativeHash, cancellationReason);
 
 			await expect(gDAOV2.progressInitiative(initiativeHash)).to.revertedWith(
 				'initiative has not been assigned'
 			);
 		});
 
-		it('should successfully complete a grant', async () => {
+		it('should successfully complete a initiative', async () => {
 			await gDAOV2.assignInitiative(initiativeHash, receivingAddress.address);
 
 			for (let i = 0; i < milestones.length - 1; i++) {
@@ -434,6 +566,91 @@ describe('GrantsDAOV2', function () {
 		});
 	});
 
+	describe('when managing competitions', () => {
+		let competition;
+		let winners;
+
+		beforeEach(async () => {
+			await gDAOV2.createCompetition(
+				competitionHash,
+				title,
+				description,
+				paymentCurrency,
+				totalBounty,
+				placeAmounts
+			);
+
+			competition = await gDAOV2.competitions(competitionHash);
+			winners = [addrs[0].address, addrs[1].address, addrs[2].address, addrs[3].address];
+		});
+
+		it('should fail if non-owner attempts to release payment', async () => {
+			await expect(
+				gDAOV2.connect(maliciousAddress).completeCompetition(competitionHash, winners)
+			).to.revertedWith('caller is not the owner');
+		});
+
+		it('should fail if non-owner attempts to cancel competition', async () => {
+			await expect(
+				gDAOV2.connect(maliciousAddress).cancelCompetition(competitionHash, cancellationReason)
+			).to.revertedWith('caller is not the owner');
+		});
+
+		it('should fail if attempt to release payment on already completed competition', async () => {
+			await gDAOV2.completeCompetition(competitionHash, winners);
+			await expect(gDAOV2.completeCompetition(competitionHash, winners)).to.revertedWith(
+				'competition is not active'
+			);
+		});
+
+		it('should fail if attempt to release payment on cancelled competition', async () => {
+			await gDAOV2.cancelCompetition(competitionHash, cancellationReason);
+			await expect(gDAOV2.completeCompetition(competitionHash, winners)).to.revertedWith(
+				'competition is not active'
+			);
+		});
+
+		it('should fail if attempt to release payment with invalid winners array length', async () => {
+			await expect(
+				gDAOV2.completeCompetition(competitionHash, winners.slice(0, 3))
+			).to.revertedWith('winners length invalid');
+		});
+
+		it('should fail if attempt to release payment with insufficient balance', async () => {
+			competitionHash = 'ASDF';
+
+			await gDAOV2.createCompetition(
+				competitionHash,
+				title,
+				description,
+				paymentCurrency,
+				hugeTotalBounty,
+				hugePlaceAmounts
+			);
+
+			await expect(gDAOV2.completeCompetition(competitionHash, winners)).to.revertedWith(
+				'insufficient balance'
+			);
+		});
+
+		it('should successfully complete a competition', async () => {
+			await expect(gDAOV2.completeCompetition(competitionHash, winners))
+				.to.emit(gDAOV2, 'CompetitionCompleted')
+				.withArgs(competitionHash);
+
+			expect(await mockERC20.balanceOf(addrs[0].address)).to.equal(placeAmounts[0]);
+			expect(await mockERC20.balanceOf(addrs[1].address)).to.equal(placeAmounts[1]);
+			expect(await mockERC20.balanceOf(addrs[2].address)).to.equal(placeAmounts[2]);
+			expect(await mockERC20.balanceOf(addrs[3].address)).to.equal(placeAmounts[3]);
+		});
+
+		it('should successfully cancel a competition', async () => {
+			await expect(gDAOV2.cancelCompetition(competitionHash, cancellationReason))
+				.to.emit(gDAOV2, 'CompetitionCancelled')
+				.withArgs(competitionHash, cancellationReason);
+		});
+	});
+
 	describe('when managing funds', () => {
 		let mockEmptyToken;
 		let withdrawalAmount = 500;
@@ -443,7 +660,7 @@ describe('GrantsDAOV2', function () {
 			mockEmptyToken = await MockERC20.deploy(gDAOV2.address, 0);
 		});
 
-		it('should fail when the contract does not have enough to release payment', async () => {
+		it('should fail when the contract does not have enough to release payment for a grant', async () => {
 			await gDAOV2.createGrant(
 				grantHash,
 				title,
@@ -454,9 +671,21 @@ describe('GrantsDAOV2', function () {
 				receivingAddress.address
 			);
 
-			await expect(gDAOV2.progressGrant(grantHash)).to.revertedWith(
-				'contract has insufficient balance'
+			await expect(gDAOV2.progressGrant(grantHash)).to.revertedWith('insufficient balance');
+		});
+
+		it('should fail when the contract does not have enough to release payment for a initiative', async () => {
+			await gDAOV2.createGrant(
+				grantHash,
+				title,
+				description,
+				milestones,
+				mockEmptyToken.address,
+				proposer,
+				receivingAddress.address
 			);
+
+			await expect(gDAOV2.progressGrant(grantHash)).to.revertedWith('insufficient balance');
 		});
 
 		it('should fail when a non-owner attempts to withdraw erc20 funds', async () => {
@@ -470,7 +699,7 @@ describe('GrantsDAOV2', function () {
 		it('should fail when there is insufficient balance', async () => {
 			await expect(
 				gDAOV2.withdraw(receivingAddress.address, withdrawalAmount, mockEmptyToken.address)
-			).to.revertedWith('insufficient balance in contract');
+			).to.revertedWith('insufficient balance');
 		});
 
 		it('should successfully allow owner to withdraw erc20 funds', async () => {
@@ -479,50 +708,6 @@ describe('GrantsDAOV2', function () {
 				.withArgs(owner.address, withdrawalAmount, mockERC20.address);
 
 			expect(await mockERC20.balanceOf(owner.address)).to.equal(withdrawalAmount);
-		});
-	});
-
-	describe('when accessing view functions', () => {
-		beforeEach(async () => {
-			await gDAOV2.createGrant(
-				grantHash,
-				title,
-				description,
-				milestones,
-				paymentCurrency,
-				proposer,
-				receivingAddress.address
-			);
-
-			await gDAOV2.createInitiative(
-				initiativeHash,
-				title,
-				description,
-				milestones,
-				paymentCurrency
-			);
-		});
-
-		it('should return the correct milestones for a grant', async () => {
-			let grantMilestonesBN = await gDAOV2.returnGrantMilestones(grantHash);
-
-			let grantMilestones = grantMilestonesBN.map((e) => e.toNumber());
-
-			expect(grantMilestones).contains(milestoneOne);
-			expect(grantMilestones).contains(milestoneTwo);
-			expect(grantMilestones).contains(milestoneThree);
-			expect(grantMilestones).contains(milestoneFour);
-		});
-
-		it('should return the correct milestones for a initative', async () => {
-			let initiativeMilestonesBN = await gDAOV2.returnInitiativeMilestones(initiativeHash);
-
-			let initiativeMilestones = initiativeMilestonesBN.map((e) => e.toNumber());
-
-			expect(initiativeMilestones).contains(milestoneOne);
-			expect(initiativeMilestones).contains(milestoneTwo);
-			expect(initiativeMilestones).contains(milestoneThree);
-			expect(initiativeMilestones).contains(milestoneFour);
 		});
 	});
 });
