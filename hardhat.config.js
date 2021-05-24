@@ -1,6 +1,8 @@
 require('@nomiclabs/hardhat-waffle');
 require('hardhat-watcher');
 require('solidity-coverage');
+require('hardhat-log-remover');
+require('hardhat-contract-sizer');
 
 // This is a sample Hardhat task. To learn how to create your own go to
 // https://hardhat.org/guides/create-task.html
@@ -26,5 +28,10 @@ module.exports = {
 			files: ['test/GrantsDAOV2.js', 'contracts/GrantsDAOV2.sol', 'contracts/mocks/MockERC20.sol'],
 			verbose: true,
 		},
+	},
+	contractSizer: {
+		alphaSort: true,
+		runOnCompile: true,
+		disambiguatePaths: false,
 	},
 };
